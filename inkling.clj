@@ -9,8 +9,9 @@
 (def +canvas-width+ 494)
 (def +canvas-height+ 400)
 (def +canvas-dimensions+ (new Dimension +canvas-width+ +canvas-height+))
-(def +pen-width+ (double 10))
-(def +motion-epsilon+ (double 0.00001))
+(def +pen-width+ (double 30))
+(def +half-pen-width+ (/ +pen-width+ 2.0))
+(def +motion-epsilon+ (double 3.0))
 
 (defstruct <model> :image :g :update-fns)
 
@@ -100,12 +101,12 @@
         builder
         (let [angle-x (- (/ dy dist))
               angle-y (/ dx dist)
-              width-x (* angle-x +pen-width+)
-              width-y (* angle-y +pen-width+)
-              x2 (- x width-x)
-              y2 (- y width-y)
-              x3 (+ x width-x)
-              y3 (+ y width-y)
+              offset-x (* angle-x +half-pen-width+)
+              offset-y (* angle-y +half-pen-width+)
+              x2 (- x offset-x)
+              y2 (- y offset-y)
+              x3 (+ x offset-x)
+              y3 (+ y offset-y)
               previous-sides (builder :previous-sides)
               builder (struct-map <stroke-builder>
                                   :previous-x x :previous-y y
