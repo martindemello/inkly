@@ -47,9 +47,7 @@
                         (.addPoint poly (+ x 2) (- y 2))
                         (add-polygon! model poly)))
         listener (proxy [MouseInputAdapter] []
-                   (mouseReleased [e] nil)
-                   (mouseDragged [e] (draw-square (.getX e) (.getY e)))
-                   (mousePressed [e] nil))]
+                   (mouseDragged [e] (draw-square (.getX e) (.getY e))))]
     (.setBackground p Color/WHITE)
     (add-update-fn! model (fn [rect] (.repaint p (.x rect) (.y rect)
                                                  (.width rect)
