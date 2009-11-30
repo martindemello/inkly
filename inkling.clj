@@ -1,14 +1,15 @@
 (ns inkling 
   (:import (javax.swing SwingUtilities JFrame JPanel WindowConstants)
            (javax.swing.event MouseInputListener)
-           (java.awt Dimension Color Polygon)
-           (java.awt.event MouseEvent)
+           (java.awt Dimension Color Polygon Rectangle)
+           (java.awt.event MouseEvent KeyEvent KeyListener)
            (java.awt.image BufferedImage)
            java.lang.Math))
 
 (def +canvas-width+ 494)
 (def +canvas-height+ 400)
 (def +canvas-dimensions+ (new Dimension +canvas-width+ +canvas-height+))
+(def +canvas-rect+ (new Rectangle +canvas-dimensions+))
 (def +pen-width+ (double 30))
 (def +half-pen-width+ (/ +pen-width+ 2.0))
 (def +motion-epsilon+ (double 3.0))
@@ -30,19 +31,59 @@
 (defn add-update-fn! [model callback]
   (swap! (model :update-fns) conj callback))
 
+(defn invoke-update-fns [model rect]
+  (doseq [f @(model :update-fns)] (f rect)))
+
 (defn add-polygon! [model polygon]
   (let [g (model :g)
         bounds (.getBounds polygon)]
     (.setColor g Color/BLACK)
     (.fillPolygon g polygon)
-    (doseq [f @(model :update-fns)] (f bounds))))
+    (invoke-update-fns model bounds)))
 
-(defstruct <input-behavior> :on-mouse-pressed :on-mouse-released
-                            :on-mouse-moved :on-mouse-dragged
-                            :on-mouse-entered :on-mouse-exited
-                            :on-mouse-clicked)
+(defn clear-canvas! [model]
+  (let [g (model :g)]
+    (.setColor g Color/WHITE)
+    (.fillRect g 0 0 +canvas-width+ +canvas-height+)
+    (invoke-update-fns model +canvas-rect+)))
+
+(def +input-events+ [:on-mouse-pressed :on-mouse-released
+                     :on-mouse-moved :on-mouse-dragged
+                     :on-mouse-entered :on-mouse-exited
+                     :on-mouse-clicked :on-key-pressed
+                     :on-key-released :on-key-typed])
+
+(def <input-behavior> (apply create-struct +input-events+))
 
 (defn do-nothing [behavior event] behavior)
+
+(def +default-event-bindings+
+  (mapcat (fn [n] [n do-nothing]) +input-events+))
+
+(def +default-input-behavior+
+  (apply struct-map (cons <input-behavior> +default-event-bindings+)))
+
+(defn make-input-behavior [] +default-input-behavior+)
+
+(defn make-input-dispatcher [event-name]
+  (fn [behavior event] ((behavior event-name) behavior event)))
+
+(defn make-input-event-multiplexer [event-name]
+  (fn [meta-behavior event]
+    (let [behaviors (meta-behavior :behaviors)
+          dispatch (fn [behavior] ((behavior event-name) behavior event))]
+      (assoc meta-behavior :behaviors (doall (map dispatch behaviors))))))
+
+(def +input-event-multiplexers+
+  (mapcat (fn [n] [n (make-input-event-multiplexer n)]) +input-events+))
+
+(def +meta-behavior-skeleton+
+  (apply struct-map (concat [<input-behavior>]
+                            +input-event-multiplexers+
+                            [:behaviors []])))
+
+(defn compose-input-behaviors [& behaviors]
+  (assoc +meta-behavior-skeleton+ :behaviors behaviors))
 
 (defn with-just-xy [f]
   (fn [behavior event] (f behavior (.getX event) (.getY event))))
@@ -53,18 +94,6 @@
         (f behavior event)
         behavior)))
 
-(defn make-input-behavior []
-  (struct-map <input-behavior> :on-mouse-pressed do-nothing
-                               :on-mouse-released do-nothing
-                               :on-mouse-moved do-nothing
-                               :on-mouse-dragged do-nothing
-                               :on-mouse-entered do-nothing
-                               :on-mouse-exited do-nothing
-                               :on-mouse-clicked do-nothing))
-
-(defn make-input-dispatcher [event-name]
-  (fn [behavior event] ((behavior event-name) behavior event)))
-
 (def dispatch-mouse-pressed (make-input-dispatcher :on-mouse-pressed))
 (def dispatch-mouse-released (make-input-dispatcher :on-mouse-released))
 (def dispatch-mouse-moved (make-input-dispatcher :on-mouse-moved))
@@ -72,17 +101,23 @@
 (def dispatch-mouse-entered (make-input-dispatcher :on-mouse-entered))
 (def dispatch-mouse-exited (make-input-dispatcher :on-mouse-exited))
 (def dispatch-mouse-clicked (make-input-dispatcher :on-mouse-clicked))
+(def dispatch-key-pressed (make-input-dispatcher :on-key-pressed))
+(def dispatch-key-released (make-input-dispatcher :on-key-released))
+(def dispatch-key-typed (make-input-dispatcher :on-key-typed))
 
 (defn make-input-handler [initial-behavior]
   (let [behavior (atom initial-behavior)]
-    (proxy [MouseInputListener] []
+    (proxy [MouseInputListener KeyListener] []
       (mousePressed [e] (swap! behavior dispatch-mouse-pressed e))
       (mouseClicked [e] (swap! behavior dispatch-mouse-clicked e))
       (mouseReleased [e] (swap! behavior dispatch-mouse-released e))
       (mouseMoved [e] (swap! behavior dispatch-mouse-moved e))
       (mouseDragged [e] (swap! behavior dispatch-mouse-dragged e))
       (mouseEntered [e] (swap! behavior dispatch-mouse-entered e))
-      (mouseExited [e] (swap! behavior dispatch-mouse-exited e)))))
+      (mouseExited [e] (swap! behavior dispatch-mouse-exited e))
+      (keyPressed [e] (swap! behavior dispatch-key-pressed e))
+      (keyReleased [e] (swap! behavior dispatch-key-released e))
+      (keyTyped [e] (swap! behavior dispatch-key-typed e)))))
 
 (defstruct <stroke-builder> :previous-x :previous-y :previous-sides)
 
@@ -159,6 +194,13 @@
 
 (defn make-draw-stroke-behavior [model] (make-draw-stroke-idle-behavior model nil))
 
+(defn make-clear-canvas-behavior [model]
+  (let [on-key-pressed (fn [behavior event]
+                         (when (= (.getKeyCode event) KeyEvent/VK_ESCAPE)
+                           (clear-canvas! model))
+                         behavior)]
+    (assoc (make-input-behavior) :on-key-pressed on-key-pressed)))
+
 (defn make-canvas-component [model]
   (let [p (proxy [JPanel] []
             (paintComponent [g]
@@ -166,13 +208,17 @@
               (render-model model g))
             (getMinimumSize [] +canvas-dimensions+)
             (getPreferredSize [] +canvas-dimensions+))
-        listener (make-input-handler (make-draw-stroke-behavior model))]
+        behaviors (compose-input-behaviors (make-clear-canvas-behavior model)
+                                           (make-draw-stroke-behavior model))
+        listener (make-input-handler behaviors)]
     (.setBackground p Color/WHITE)
     (add-update-fn! model (fn [rect] (.repaint p (.x rect) (.y rect)
                                                  (.width rect)
                                                  (.height rect))))
     (.addMouseListener p listener)
     (.addMouseMotionListener p listener)
+    (.addKeyListener p listener)
+    (.setFocusable p true)
     p))
 
 (defn make-toplevel-window []
