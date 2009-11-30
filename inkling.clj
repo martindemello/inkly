@@ -94,30 +94,26 @@
         (f behavior event)
         behavior)))
 
-(def dispatch-mouse-pressed (make-input-dispatcher :on-mouse-pressed))
-(def dispatch-mouse-released (make-input-dispatcher :on-mouse-released))
-(def dispatch-mouse-moved (make-input-dispatcher :on-mouse-moved))
-(def dispatch-mouse-dragged (make-input-dispatcher :on-mouse-dragged))
-(def dispatch-mouse-entered (make-input-dispatcher :on-mouse-entered))
-(def dispatch-mouse-exited (make-input-dispatcher :on-mouse-exited))
-(def dispatch-mouse-clicked (make-input-dispatcher :on-mouse-clicked))
-(def dispatch-key-pressed (make-input-dispatcher :on-key-pressed))
-(def dispatch-key-released (make-input-dispatcher :on-key-released))
-(def dispatch-key-typed (make-input-dispatcher :on-key-typed))
+(dorun (map (fn [event-name]
+              (let [event-name-string (.substring (str event-name) 1)
+                    dispatch-fn-name (.concat "dispatch-" event-name-string)]
+                (intern *ns* (symbol dispatch-fn-name)
+                             (make-input-dispatcher event-name))))
+            +input-events+))
 
 (defn make-input-handler [initial-behavior]
   (let [behavior (atom initial-behavior)]
     (proxy [MouseInputListener KeyListener] []
-      (mousePressed [e] (swap! behavior dispatch-mouse-pressed e))
-      (mouseClicked [e] (swap! behavior dispatch-mouse-clicked e))
-      (mouseReleased [e] (swap! behavior dispatch-mouse-released e))
-      (mouseMoved [e] (swap! behavior dispatch-mouse-moved e))
-      (mouseDragged [e] (swap! behavior dispatch-mouse-dragged e))
-      (mouseEntered [e] (swap! behavior dispatch-mouse-entered e))
-      (mouseExited [e] (swap! behavior dispatch-mouse-exited e))
-      (keyPressed [e] (swap! behavior dispatch-key-pressed e))
-      (keyReleased [e] (swap! behavior dispatch-key-released e))
-      (keyTyped [e] (swap! behavior dispatch-key-typed e)))))
+      (mousePressed [e] (swap! behavior dispatch-on-mouse-pressed e))
+      (mouseClicked [e] (swap! behavior dispatch-on-mouse-clicked e))
+      (mouseReleased [e] (swap! behavior dispatch-on-mouse-released e))
+      (mouseMoved [e] (swap! behavior dispatch-on-mouse-moved e))
+      (mouseDragged [e] (swap! behavior dispatch-on-mouse-dragged e))
+      (mouseEntered [e] (swap! behavior dispatch-on-mouse-entered e))
+      (mouseExited [e] (swap! behavior dispatch-on-mouse-exited e))
+      (keyPressed [e] (swap! behavior dispatch-on-key-pressed e))
+      (keyReleased [e] (swap! behavior dispatch-on-key-released e))
+      (keyTyped [e] (swap! behavior dispatch-on-key-typed e)))))
 
 (defstruct <stroke-builder> :previous-x :previous-y :previous-sides)
 
