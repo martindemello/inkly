@@ -71,8 +71,8 @@
 (def dispatch-mouse-exited (make-input-dispatcher :on-mouse-exited))
 (def dispatch-mouse-clicked (make-input-dispatcher :on-mouse-clicked))
 
-(defn make-input-handler [behavior]
-  (let [behavior (atom behavior)]
+(defn make-input-handler [initial-behavior]
+  (let [behavior (atom initial-behavior)]
     (proxy [MouseInputListener] []
       (mousePressed [e] (swap! behavior dispatch-mouse-pressed e))
       (mouseClicked [e] (swap! behavior dispatch-mouse-clicked e))
