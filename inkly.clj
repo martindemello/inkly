@@ -62,8 +62,9 @@
 (defn add-polygon! [model polygon]
   (let [g (model :g)
         bounds (.getBounds polygon)]
+    (.setSize bounds (+ (.width bounds) 1) (+ (.height bounds) 1))
     (.setColor g Color/BLACK)
-    (.fillPolygon g polygon)
+    (.drawPolygon g polygon)
     (invoke-update-fns model bounds)))
 
 (defn clear-canvas! [model]
