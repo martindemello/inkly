@@ -22,7 +22,7 @@
 ; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 (ns inkly 
   (:import [javax.swing SwingUtilities JFrame JPanel WindowConstants]
-           [java.awt Dimension Color Polygon Rectangle]
+           [java.awt Dimension Color Polygon Rectangle AlphaComposite]
            [java.awt.event MouseEvent KeyEvent]
            [java.awt.image BufferedImage]
            java.lang.Math)
@@ -39,48 +39,67 @@
 (def +half-pen-width+ (/ +pen-width+ 2.0))
 (def +motion-epsilon+ (double 2.0))
 
-(defstruct <model> :image :g :update-fns)
+(defstruct <model> :canvas-image :overlay-image :canvas-g :overlay-g :update-fns)
+
+(declare clear-canvas!)
+(declare clear-overlay!)
 
 (defn make-model []
-  (let [image (new BufferedImage +canvas-width+ +canvas-height+
-                   BufferedImage/TYPE_INT_ARGB_PRE)
-        g (.createGraphics image)
-        model (struct-map <model> :image image :g g :update-fns (atom ()))]
-    (.setColor g Color/WHITE)
-    (.fillRect g 0 0 +canvas-width+ +canvas-height+)
+  (let [make-image (fn [] (new BufferedImage +canvas-width+ +canvas-height+
+                               BufferedImage/TYPE_INT_ARGB_PRE))
+        canvas-image (make-image)
+        overlay-image (make-image)
+        canvas-g (.createGraphics canvas-image)
+        overlay-g (.createGraphics overlay-image)
+        model (struct-map <model> :canvas-image canvas-image
+                                  :canvas-g canvas-g
+                                  :overlay-image overlay-image
+                                  :overlay-g overlay-g
+                                  :update-fns (atom ()))]
+    (clear-canvas! model)
+    (clear-overlay! model)
     model))
-
-(defn render-model [model g]
-  (.drawImage g (model :image) 0 0 nil))
-
-(defn add-update-fn! [model callback]
-  (swap! (model :update-fns) conj callback))
 
 (defn invoke-update-fns [model rect]
   (doseq [f @(model :update-fns)] (f rect)))
 
-(defn add-polygon! [model polygon]
-  (let [g (model :g)
-        bounds (.getBounds polygon)]
-    (.setSize bounds (+ (.width bounds) 1) (+ (.height bounds) 1))
-    (.setColor g Color/BLACK)
-    (.drawPolygon g polygon)
-    (invoke-update-fns model bounds)))
+(defn render-model [model g]
+  (.setComposite g AlphaComposite/Src)
+  (.drawImage g (model :canvas-image) 0 0 nil)
+  (.setComposite g AlphaComposite/SrcOver)
+  (.drawImage g (model :overlay-image) 0 0 nil))
 
-(defn add-quad-from-points! [model p0 p1 p2 p3]
+(defn clear-canvas! [model]
+  (let [g (model :canvas-g)]
+    (.setColor g Color/WHITE)
+    (.setComposite g AlphaComposite/Src)
+    (.fillRect g 0 0 +canvas-width+ +canvas-height+)
+    (.setComposite g AlphaComposite/SrcOver)
+    (invoke-update-fns model +canvas-rect+)))
+
+(defn clear-overlay! [model]
+  (let [g (model :overlay-g)]
+    (.setComposite g AlphaComposite/Clear)
+    (.fillRect g 0 0 +canvas-width+ +canvas-height+)
+    (.setComposite g AlphaComposite/SrcOver)
+    (invoke-update-fns model +canvas-rect+)))
+
+(defn add-update-fn! [model callback]
+  (swap! (model :update-fns) conj callback))
+
+(defn draw-overlay-quad! [model p0 p1 p2 p3]
   (let [poly (new Polygon)
         add-point (fn [[x y]] (.addPoint poly x y))]
     (add-point p0)
     (add-point p1)
     (add-point p2)
     (add-point p3)
-    (add-polygon! model poly)))
-
-(defn clear-canvas! [model]
-  (let [g (model :g)]
-    (.setColor g Color/WHITE)
-    (.fillRect g 0 0 +canvas-width+ +canvas-height+)
-    (invoke-update-fns model +canvas-rect+)))
+    (let [g (model :overlay-g)
+          bounds (.getBounds poly)]
+      (.setColor g Color/RED)
+      (.drawPolygon g poly)
+      (.setSize bounds (+ (.width bounds) 1) (+ (.height bounds) 1))
+      (invoke-update-fns model bounds))))
 
 (defn vadd [[x0 y0] [x1 y1]]
   [(+ x0 x1) (+ y0 y1)])
@@ -133,7 +152,7 @@
                                   :stroke-sides (cons [p3 p2] stroke-sides))]
           (when (not (empty? stroke-sides))
             (let [[p0 p1] (first stroke-sides)]
-              (add-quad-from-points! model p0 p1 p2 p3)))
+              (draw-overlay-quad! model p0 p1 p2 p3)))
           builder))))
 
 (defn complete-stroke! [model builder]
@@ -143,7 +162,8 @@
         stroke-sides (builder :stroke-sides)]
     (when (not (empty? stroke-sides))
       (let [[p0 p1] (first stroke-sides)]
-        (add-quad-from-points! model p0 p1 p2 p3)))))
+        (draw-overlay-quad! model p0 p1 p2 p3)
+        (clear-overlay! model)))))
 
 (defn with-just-xy [f]
   (fn [behavior event] (f behavior (.getX event) (.getY event))))
