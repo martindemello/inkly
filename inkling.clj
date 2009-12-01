@@ -95,7 +95,7 @@
         (f behavior event)
         behavior)))
 
-(def make-draw-stroke-active-behavior) ;forward declaration
+(declare make-draw-stroke-active-behavior)
 
 (defn make-draw-stroke-idle-behavior [model previous-pos]
   (let [on-mouse-pressed (fn [behavior x y]
