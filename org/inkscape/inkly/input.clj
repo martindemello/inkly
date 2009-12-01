@@ -1,4 +1,4 @@
-; org.inkscape.inkling.input - input handling abstractions
+; org.inkscape.inkly.input - input handling abstractions
 ;
 ; Copyright (c) 2009 MenTaLguY <mental@rydia.net>
 ;
@@ -20,7 +20,7 @@
 ; LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 ; OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 ; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-(ns org.inkscape.inkling.input
+(ns org.inkscape.inkly.input
   (:import (javax.swing.event MouseInputListener)
            (java.awt.event KeyListener)))
 

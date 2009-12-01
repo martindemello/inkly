@@ -1,4 +1,4 @@
-; inkling - a drawing application of modest aspirations
+; inkly - a little drawing app of modest aspirations
 ;
 ; Copyright (c) 2009 MenTaLguY <mental@rydia.net>
 ;
@@ -20,13 +20,13 @@
 ; LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 ; OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 ; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-(ns inkling 
+(ns inkly 
   (:import [javax.swing SwingUtilities JFrame JPanel WindowConstants]
            [java.awt Dimension Color Polygon Rectangle]
            [java.awt.event MouseEvent KeyEvent]
            [java.awt.image BufferedImage]
            java.lang.Math)
-  (:use [org.inkscape.inkling.input :only [make-input-behavior
+  (:use [org.inkscape.inkly.input :only [make-input-behavior
                                            compose-input-behaviors
                                            make-input-listener]]))
 
@@ -186,7 +186,7 @@
   (let [w (new JFrame)
         model (make-model)
         v (make-canvas-component model)]
-    (.setTitle w "Inkling")
+    (.setTitle w "Inkly")
     (.add w v)
     (.pack w)
     (.setBackground w Color/WHITE)
