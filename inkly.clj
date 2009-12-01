@@ -28,7 +28,8 @@
            java.lang.Math)
   (:use [org.inkscape.inkly.input :only [make-input-behavior
                                          compose-input-behaviors
-                                         make-input-listener]]))
+                                         make-input-listener]])
+  (:gen-class))
 
 (def +canvas-width+ 494)
 (def +canvas-height+ 400)
@@ -195,4 +196,10 @@
     (.setVisible w true)
     w))
 
-(SwingUtilities/invokeAndWait make-toplevel-window)
+(defn -main [& args] ())
+
+(defn main [& args]
+  (SwingUtilities/invokeAndWait make-toplevel-window))
+
+(when (not *compile-files*)
+  (apply main *command-line-args*))
