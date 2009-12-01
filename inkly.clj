@@ -37,7 +37,7 @@
 (def +canvas-rect+ (new Rectangle +canvas-dimensions+))
 (def +pen-width+ (double 30))
 (def +half-pen-width+ (/ +pen-width+ 2.0))
-(def +motion-epsilon+ (double 3.0))
+(def +motion-epsilon+ (double 2.0))
 
 (defstruct <model> :image :g :update-fns)
 
@@ -67,48 +67,87 @@
     (.drawPolygon g polygon)
     (invoke-update-fns model bounds)))
 
+(defn add-quad-from-points! [model p0 p1 p2 p3]
+  (let [poly (new Polygon)
+        add-point (fn [[x y]] (.addPoint poly x y))]
+    (add-point p0)
+    (add-point p1)
+    (add-point p2)
+    (add-point p3)
+    (add-polygon! model poly)))
+
 (defn clear-canvas! [model]
   (let [g (model :g)]
     (.setColor g Color/WHITE)
     (.fillRect g 0 0 +canvas-width+ +canvas-height+)
     (invoke-update-fns model +canvas-rect+)))
 
-(defstruct <stroke-builder> :previous-x :previous-y :previous-sides)
+(defn vadd [[x0 y0] [x1 y1]]
+  [(+ x0 x1) (+ y0 y1)])
 
-(defn make-stroke-builder [previous-x previous-y]
-  (struct-map <stroke-builder> :previous-x (double previous-x)
-                               :previous-y (double previous-y)
+(defn vsub [[x0 y0] [x1 y1]]
+  [(- x0 x1) (- y0 y1)])
+
+(defn vmag [[x y]]
+  (Math/sqrt (+ (* x x) (* y y))))
+
+(defn vscale [s [x y]] [(* s x) (* s y)])
+
+(defn vscaleinv [s [x y]] [(/ x s) (/ y s)])
+
+(defn vnorm [v]
+  (let [m (vmag v)]
+    (if (= m 0.0)
+      [(double 0.0) (double 0.0)]
+      (vscaleinv m v))))
+
+; anti-clockwise in screen coordinate system
+(defn rot90 [[x y]] [(- y) x])
+
+(defn stroke-vector [vin vout]
+  (rot90 (vnorm (vadd vin vout))))
+
+(defn stroke-points [pos vin vout]
+  (let [stroke-angle (stroke-vector vin vout)
+        stroke-offset (vscale +half-pen-width+ stroke-angle)]
+    [(vsub pos stroke-offset) (vadd pos stroke-offset)]))
+
+(defstruct <stroke-builder> :history :previous-vel :previous-sides)
+
+(defn make-stroke-builder [x y]
+  (struct-map <stroke-builder> :history [[x y]]
+                               :previous-vel [(double 0.0) (double 0.0)]
                                :previous-sides nil))
 
 (defn add-stroke-sample! [model builder x y]
-  (let [x (double x)
-        y (double y)
-        dx (- x (builder :previous-x))
-        dy (- y (builder :previous-y))
-        dist (Math/sqrt (+ (* dx dx) (* dy dy)))]
-    (if (< dist +motion-epsilon+)
+  (let [pos [(double x) (double y)]
+        history (builder :history)
+        old-pos (first history)
+        vel (vsub pos old-pos)
+        mvel (vmag vel)]
+    (if (< mvel +motion-epsilon+)
         builder
-        (let [angle-x (- (/ dy dist))
-              angle-y (/ dx dist)
-              offset-x (* angle-x +half-pen-width+)
-              offset-y (* angle-y +half-pen-width+)
-              x2 (- x offset-x)
-              y2 (- y offset-y)
-              x3 (+ x offset-x)
-              y3 (+ y offset-y)
+        (let [old-vel (builder :previous-vel)
+              [p2 p3] (stroke-points old-pos old-vel vel)
               previous-sides (builder :previous-sides)
               builder (struct-map <stroke-builder>
-                                  :previous-x x :previous-y y
-                                  :previous-sides [[x3 y3] [x2 y2]])]
+                                  :history (cons pos history)
+                                  :previous-vel vel
+                                  ; note order: [p3 p2] become [p0 p1]
+                                  :previous-sides [p3 p2])]
           (when (not (nil? previous-sides))
-            (let [[[x0 y0] [x1 y1]] previous-sides
-                  poly (new Polygon)]
-              (.addPoint poly x0 y0)
-              (.addPoint poly x1 y1)
-              (.addPoint poly x2 y2)
-              (.addPoint poly x3 y3)
-              (add-polygon! model poly)))
+            (let [[p0 p1] previous-sides]
+              (add-quad-from-points! model p0 p1 p2 p3)))
           builder))))
+
+(defn complete-stroke! [model builder]
+  (let [old-vel (builder :previous-vel)
+        old-pos (first (builder :history))
+        [p2 p3] (stroke-points old-pos old-vel old-vel)
+        previous-sides (builder :previous-sides)]
+    (when (not (nil? previous-sides))
+      (let [[p0 p1] previous-sides]
+        (add-quad-from-points! model p0 p1 p2 p3)))))
 
 (defn with-just-xy [f]
   (fn [behavior event] (f behavior (.getX event) (.getY event))))
@@ -126,7 +165,7 @@
           (guard-button MouseEvent/BUTTON1 (with-just-xy
             (fn [behavior x y]
               (let [[previous-x previous-y] (get behavior :previous-pos [x y])
-                    builder (make-stroke-builder previous-x previous-y)
+                    builder (make-stroke-builder x y)
                     builder (add-stroke-sample! model builder x y)]
                 (make-draw-stroke-active-behavior model builder)))))
 
@@ -143,8 +182,9 @@
   (let [on-mouse-released
           (guard-button MouseEvent/BUTTON1 (with-just-xy
             (fn [behavior x y]
-              (add-stroke-sample! model (behavior :builder) x y)
-              (make-draw-stroke-idle-behavior model [x y]))))
+              (let [builder (add-stroke-sample! model (behavior :builder) x y)]
+                (complete-stroke! model builder)
+                (make-draw-stroke-idle-behavior model [x y])))))
 
         on-mouse-dragged
           (with-just-xy
