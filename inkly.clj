@@ -104,49 +104,45 @@
 ; anti-clockwise in screen coordinate system
 (defn rot90 [[x y]] [(- y) x])
 
-(defn stroke-vector [vin vout]
-  (rot90 (vnorm (vadd vin vout))))
-
 (defn stroke-points [pos vin vout]
-  (let [stroke-angle (stroke-vector vin vout)
+  (let [stroke-angle (rot90 (vnorm (vadd vin vout)))
         stroke-offset (vscale +half-pen-width+ stroke-angle)]
     [(vsub pos stroke-offset) (vadd pos stroke-offset)]))
 
-(defstruct <stroke-builder> :history :previous-vel :previous-sides)
+(defstruct <stroke-builder> :previous-pos :previous-vel :stroke-sides)
 
 (defn make-stroke-builder [x y]
-  (struct-map <stroke-builder> :history [[x y]]
+  (struct-map <stroke-builder> :previous-pos [x y]
                                :previous-vel [(double 0.0) (double 0.0)]
-                               :previous-sides nil))
+                               :stroke-sides []))
 
 (defn add-stroke-sample! [model builder x y]
   (let [pos [(double x) (double y)]
-        history (builder :history)
-        old-pos (first history)
+        old-pos (builder :previous-pos)
         vel (vsub pos old-pos)
         mvel (vmag vel)]
     (if (< mvel +motion-epsilon+)
         builder
         (let [old-vel (builder :previous-vel)
               [p2 p3] (stroke-points old-pos old-vel vel)
-              previous-sides (builder :previous-sides)
+              stroke-sides (builder :stroke-sides)
               builder (struct-map <stroke-builder>
-                                  :history (cons pos history)
+                                  :previous-pos pos
                                   :previous-vel vel
                                   ; note order: [p3 p2] become [p0 p1]
-                                  :previous-sides [p3 p2])]
-          (when (not (nil? previous-sides))
-            (let [[p0 p1] previous-sides]
+                                  :stroke-sides (cons [p3 p2] stroke-sides))]
+          (when (not (empty? stroke-sides))
+            (let [[p0 p1] (first stroke-sides)]
               (add-quad-from-points! model p0 p1 p2 p3)))
           builder))))
 
 (defn complete-stroke! [model builder]
   (let [old-vel (builder :previous-vel)
-        old-pos (first (builder :history))
+        old-pos (builder :previous-pos)
         [p2 p3] (stroke-points old-pos old-vel old-vel)
-        previous-sides (builder :previous-sides)]
-    (when (not (nil? previous-sides))
-      (let [[p0 p1] previous-sides]
+        stroke-sides (builder :stroke-sides)]
+    (when (not (empty? stroke-sides))
+      (let [[p0 p1] (first stroke-sides)]
         (add-quad-from-points! model p0 p1 p2 p3)))))
 
 (defn with-just-xy [f]
