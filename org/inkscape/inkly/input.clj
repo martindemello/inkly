@@ -69,7 +69,8 @@
 (dorun (map define-dispatcher +input-events+))
 
 ; public API
-(defn make-input-behavior [] +behavior-skeleton+)
+(defn make-input-behavior [& args]
+  (apply assoc (cons +behavior-skeleton+ args)))
 
 (defn compose-input-behaviors [& behaviors]
   (assoc +meta-behavior-skeleton+ :behaviors behaviors))

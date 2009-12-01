@@ -27,8 +27,8 @@
            [java.awt.image BufferedImage]
            java.lang.Math)
   (:use [org.inkscape.inkly.input :only [make-input-behavior
-                                           compose-input-behaviors
-                                           make-input-listener]]))
+                                         compose-input-behaviors
+                                         make-input-listener]]))
 
 (def +canvas-width+ 494)
 (def +canvas-height+ 400)
@@ -120,47 +120,49 @@
 (declare make-draw-stroke-active-behavior)
 
 (defn make-draw-stroke-idle-behavior [model previous-pos]
-  (let [on-mouse-pressed (fn [behavior x y]
-                           (let [[previous-x previous-y] (get behavior :previous-pos [x y])
-                                 builder (make-stroke-builder previous-x previous-y)
-                                 builder (add-stroke-sample! model builder x y)]
-                             (make-draw-stroke-active-behavior model builder)))
-        on-mouse-pressed (with-just-xy on-mouse-pressed)
-        on-mouse-pressed (guard-button MouseEvent/BUTTON1 on-mouse-pressed)
+  (let [on-mouse-pressed
+          (guard-button MouseEvent/BUTTON1 (with-just-xy
+            (fn [behavior x y]
+              (let [[previous-x previous-y] (get behavior :previous-pos [x y])
+                    builder (make-stroke-builder previous-x previous-y)
+                    builder (add-stroke-sample! model builder x y)]
+                (make-draw-stroke-active-behavior model builder)))))
 
-        on-mouse-moved (fn [behavior x y]
-                         (assoc behavior :previous-pos [x y]))
-        on-mouse-moved (with-just-xy on-mouse-moved)]
+        on-mouse-moved
+          (with-just-xy
+            (fn [behavior x y] (assoc behavior :previous-pos [x y])))]
 
-    (assoc (make-input-behavior) :on-mouse-pressed on-mouse-pressed
-                                 :on-mouse-moved on-mouse-moved
-                                 :on-mouse-dragged on-mouse-moved
-                                 :previous-pos previous-pos)))
+    (make-input-behavior :on-mouse-pressed on-mouse-pressed
+                         :on-mouse-moved on-mouse-moved
+                         :on-mouse-dragged on-mouse-moved
+                         :previous-pos previous-pos)))
 
 (defn make-draw-stroke-active-behavior [model builder]
-  (let [on-mouse-released (fn [behavior x y]
-                            (add-stroke-sample! model (behavior :builder) x y)
-                            (make-draw-stroke-idle-behavior model [x y]))
-        on-mouse-released (with-just-xy on-mouse-released)
-        on-mouse-released (guard-button MouseEvent/BUTTON1 on-mouse-released)
+  (let [on-mouse-released
+          (guard-button MouseEvent/BUTTON1 (with-just-xy
+            (fn [behavior x y]
+              (add-stroke-sample! model (behavior :builder) x y)
+              (make-draw-stroke-idle-behavior model [x y]))))
 
-        on-mouse-dragged (fn [behavior x y]
-                            (let [builder (add-stroke-sample! model (behavior :builder) x y)]
-                              (assoc behavior :builder builder)))
-        on-mouse-dragged (with-just-xy on-mouse-dragged)]
+        on-mouse-dragged
+          (with-just-xy
+            (fn [behavior x y]
+              (let [builder (add-stroke-sample! model (behavior :builder) x y)]
+                (assoc behavior :builder builder))))]
 
-    (assoc (make-input-behavior) :on-mouse-released on-mouse-released
-                                 :on-mouse-dragged on-mouse-dragged
-                                 :builder builder)))
+    (make-input-behavior :on-mouse-released on-mouse-released
+                         :on-mouse-dragged on-mouse-dragged
+                         :builder builder)))
 
 (defn make-draw-stroke-behavior [model] (make-draw-stroke-idle-behavior model nil))
 
 (defn make-clear-canvas-behavior [model]
-  (let [on-key-pressed (fn [behavior event]
-                         (when (= (.getKeyCode event) KeyEvent/VK_ESCAPE)
-                           (clear-canvas! model))
-                         behavior)]
-    (assoc (make-input-behavior) :on-key-pressed on-key-pressed)))
+  (let [on-key-pressed
+          (fn [behavior event]
+            (when (= (.getKeyCode event) KeyEvent/VK_ESCAPE)
+              (clear-canvas! model))
+            behavior)]
+    (make-input-behavior :on-key-pressed on-key-pressed)))
 
 (defn make-canvas-component [model]
   (let [p (proxy [JPanel] []
@@ -173,9 +175,7 @@
                                            (make-draw-stroke-behavior model))
         listener (make-input-listener behaviors)]
     (.setBackground p Color/WHITE)
-    (add-update-fn! model (fn [rect] (.repaint p (.x rect) (.y rect)
-                                                 (.width rect)
-                                                 (.height rect))))
+    (add-update-fn! model #(.repaint p (.x %) (.y %) (.width %) (.height %)))
     (.addMouseListener p listener)
     (.addMouseMotionListener p listener)
     (.addKeyListener p listener)
