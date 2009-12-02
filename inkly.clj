@@ -162,6 +162,7 @@
         mvel (vmag vel)]
     (if (< mvel +motion-epsilon+)
         builder
+        ; else
         (let [old-vel (builder :previous-vel)
               [p2 p3] (stroke-points old-pos old-vel vel)
               stroke-sides (builder :stroke-sides)
