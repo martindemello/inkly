@@ -22,7 +22,9 @@
 ; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 (ns inkly 
   (:import [javax.swing SwingUtilities JFrame JPanel WindowConstants]
-           [java.awt Dimension Color Polygon Rectangle AlphaComposite]
+           [java.awt Dimension Color Rectangle AlphaComposite
+                     RenderingHints]
+           [java.awt.geom Path2D Path2D$Float]
            [java.awt.event MouseEvent KeyEvent]
            [java.awt.image BufferedImage]
            java.lang.Math)
@@ -73,8 +75,12 @@
   (let [g (model :canvas-g)]
     (.setColor g Color/WHITE)
     (.setComposite g AlphaComposite/Src)
+    (.setRenderingHint g RenderingHints/KEY_ANTIALIASING
+                         RenderingHints/VALUE_ANTIALIAS_OFF)
     (.fillRect g 0 0 +canvas-width+ +canvas-height+)
     (.setComposite g AlphaComposite/SrcOver)
+    (.setRenderingHint g RenderingHints/KEY_ANTIALIASING
+                         RenderingHints/VALUE_ANTIALIAS_ON)
     (invoke-update-fns model +canvas-rect+)))
 
 (defn clear-overlay! [model]
@@ -87,19 +93,33 @@
 (defn add-update-fn! [model callback]
   (swap! (model :update-fns) conj callback))
 
+(defn make-polygon [points]
+  (let [path (new Path2D$Float)]
+    (.setWindingRule path Path2D/WIND_NON_ZERO)
+    (when (not (empty? points))
+      (let [[initial-point & remaining-points] points
+            move-to (fn [[x y]] (.moveTo path x y))
+            line-to (fn [[x y]] (.lineTo path x y))]
+        (move-to initial-point)
+        (dorun (map line-to remaining-points)))
+      (.closePath path))
+    path))
+
 (defn draw-overlay-quad! [model p0 p1 p2 p3]
-  (let [poly (new Polygon)
-        add-point (fn [[x y]] (.addPoint poly x y))]
-    (add-point p0)
-    (add-point p1)
-    (add-point p2)
-    (add-point p3)
-    (let [g (model :overlay-g)
-          bounds (.getBounds poly)]
-      (.setColor g Color/RED)
-      (.drawPolygon g poly)
-      (.setSize bounds (+ (.width bounds) 1) (+ (.height bounds) 1))
-      (invoke-update-fns model bounds))))
+  (let [poly (make-polygon [p0 p1 p2 p3])
+        g (model :overlay-g)
+        bounds (.getBounds poly)]
+    (.setColor g Color/BLACK)
+    (.fill g poly)
+    (invoke-update-fns model bounds)))
+
+(defn draw-canvas-polygon! [model points]
+  (let [poly (make-polygon points)
+        g (model :canvas-g)
+        bounds (.getBounds poly)]
+    (.setColor g Color/BLACK)
+    (.fill g poly)
+    (invoke-update-fns model bounds)))
 
 (defn vadd [[x0 y0] [x1 y1]]
   [(+ x0 x1) (+ y0 y1)])
@@ -161,9 +181,10 @@
         [p2 p3] (stroke-points old-pos old-vel old-vel)
         stroke-sides (builder :stroke-sides)]
     (when (not (empty? stroke-sides))
-      (let [[p0 p1] (first stroke-sides)]
-        (draw-overlay-quad! model p0 p1 p2 p3)
-        (clear-overlay! model)))))
+      (clear-overlay! model)
+      (let [points (concat (map first stroke-sides)
+                           (map second (reverse stroke-sides)))]
+        (draw-canvas-polygon! model points)))))
 
 (defn with-just-xy [f]
   (fn [behavior event] (f behavior (.getX event) (.getY event))))
