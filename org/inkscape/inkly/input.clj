@@ -62,7 +62,7 @@
 
 (defn- define-dispatcher [event-name]
   (let [event-name-string (.substring (str event-name) 1)
-        fn-name (.concat "dispatch-" (.substring (str event-name) 1))
+        fn-name (.concat "dispatch-" event-name-string)
         sym (with-meta (symbol fn-name) {:private true})]
     (intern *ns* sym (make-input-dispatcher event-name))))
 
