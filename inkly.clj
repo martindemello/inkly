@@ -265,7 +265,7 @@
   (let [w (new JFrame)
         model (make-model)
         v (make-canvas-component model)]
-    (.setTitle w "Inkly")
+    (.setTitle w "~Inkly~")
     (.add w v)
     (.pack w)
     (.setBackground w Color/WHITE)
