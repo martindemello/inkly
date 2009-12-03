@@ -143,6 +143,26 @@
 ; anti-clockwise in screen coordinate system
 (defn rot90 [[x y]] [(- y) x])
 
+(defn segments-intersect? [[[x0 y0] [x1 y1]] [[x2 y2] [x3 y3]]]
+  (let [x0 (double x0) y0 (double y0)
+        x1 (double x1) y1 (double y1)
+        x2 (double x2) y2 (double y2)
+        x3 (double x3) y3 (double y3)
+        dx0 (- x1 x0) dx1 (- x3 x2)
+        dy0 (- y1 y0) dy1 (- y3 y2)
+        denom (- (* dy1 dx0) (* dx1 dy0))
+        relx (- x0 x2) rely (- y0 y2)
+        num0 (- (* dx1 rely) (* dy1 relx))
+        num1 (- (* dx0 rely) (* dy0 relx))]
+    (if (= denom 0.0)
+        ; parallel or coincident
+        false
+        ; else, intersecting lines
+        (let [t0 (/ num0 denom) t1 (/ num1 denom)]
+          ; check if intersections lie within segments
+          (and (and (>= t0 0.0) (<= t0 1.0))
+               (and (>= t1 0.0) (<= t1 1.0)))))))
+
 (defn stroke-points [pos vin vout]
   (let [stroke-angle (rot90 (vnorm (vadd vin vout)))
         stroke-offset (vscale +half-pen-width+ stroke-angle)]
@@ -173,6 +193,10 @@
                                   :stroke-sides (cons [p3 p2] stroke-sides))]
           (when (not (empty? stroke-sides))
             (let [[p0 p1] (first stroke-sides)]
+              (when (segments-intersect? [p0 p3] [p1 p2])
+                (println (.concat "Side bowtie: " (str [[p0 p3] [p1 p2]]))))
+              (when (segments-intersect? [p0 p1] [p2 p3])
+                (println (.concat "Longitudinal bowtie: " (str [[p0 p1] [p2 p3]]))))
               (draw-overlay-quad! model p0 p1 p2 p3)))
           builder))))
 
