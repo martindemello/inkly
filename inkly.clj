@@ -30,7 +30,8 @@
            java.lang.Math)
   (:use [org.inkscape.inkly.input :only [make-input-behavior
                                          compose-input-behaviors
-                                         make-input-listener]])
+                                         make-input-listener]]
+        [org.inkscape.inkly.syntax :only [infix-math]])
   (:gen-class))
 
 (def +canvas-width+ 494)
@@ -128,7 +129,7 @@
   [(- x0 x1) (- y0 y1)])
 
 (defn vmag [[x y]]
-  (Math/sqrt (+ (* x x) (* y y))))
+  (infix-math (Math/sqrt ((x * x) + (y * y)))))
 
 (defn vscale [s [x y]] [(* s x) (* s y)])
 
