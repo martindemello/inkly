@@ -11,7 +11,7 @@ clojure.jar:
 	@false
 
 compile: classes clojure.jar
-	CLASSPATH=clojure.jar:classes java clojure.main -e "(compile 'inkly)"
+	CLASSPATH=clojure.jar:classes:. java clojure.main -e "(compile 'inkly)"
 
 inkly.jar: compile
 	cd classes && jar xf ../clojure.jar
@@ -20,6 +20,6 @@ inkly.jar: compile
 	jar i $@
 
 run: clojure.jar
-	CLASSPATH=clojure.jar java clojure.main inkly.clj
+	CLASSPATH=clojure.jar:. java clojure.main inkly.clj
 
 package: inkly.jar
