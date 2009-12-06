@@ -23,7 +23,7 @@
 (ns inkly 
   (:import [javax.swing SwingUtilities JFrame JPanel WindowConstants
                         JToolBar JToggleButton ButtonGroup Icon JButton
-                        JSlider]
+                        JSlider JMenuBar JMenu JMenuItem BorderFactory]
            [javax.swing.event ChangeListener]
            [java.awt Dimension Color Rectangle AlphaComposite
                      RenderingHints BorderLayout Insets Polygon]
@@ -80,17 +80,17 @@
 
 (defn render-model [model g]
   (.setComposite g AlphaComposite/Src)
-  (.setRenderingHint g RenderingHints/KEY_ANTIALIASING
-                       RenderingHints/VALUE_ANTIALIAS_OFF)
   (.setColor g Color/WHITE)
   (.fillRect g 0 0 +canvas-width+ +canvas-height+)
+  (.setComposite g AlphaComposite/SrcOver)
   (.setRenderingHint g RenderingHints/KEY_ANTIALIASING
                        RenderingHints/VALUE_ANTIALIAS_ON)
-  (.setComposite g AlphaComposite/SrcOver)
   (let [render-blob (fn [[color area]]
                       (.setColor g color)
                       (.fill g area))]
     (dorun (map render-blob @(model :blobs))))
+  (.setRenderingHint g RenderingHints/KEY_ANTIALIASING
+                       RenderingHints/VALUE_ANTIALIAS_OFF)
   (.drawImage g ((model :overlay-buffer) :image) 0 0 nil))
 
 (defn clear-canvas! [model]
@@ -387,6 +387,7 @@
         black-button (make-color-button Color/BLACK)
         clear-all-button (make-toolbar-clear-button model)
         pen-width-slider (make-toolbar-width-slider model)]
+    (.setBorder toolbar (BorderFactory/createLoweredBevelBorder))
     (.setFloatable toolbar false)
     (.setRollover toolbar true)
     (.add toolbar black-button)
@@ -398,14 +399,27 @@
     (.add toolbar pen-width-slider)
     toolbar))
 
+(defn make-menubar [model]
+  (let [menubar (new JMenuBar)
+        file-menu (new JMenu "File")
+        export-svg-item (new JMenuItem "Export as SVG...")
+        close-item (new JMenuItem "Close")]
+    (.add file-menu export-svg-item)
+    (.addSeparator file-menu)
+    (.add file-menu close-item)
+    (.add menubar file-menu)
+    menubar))
+
 (defn make-toplevel-window []
   (let [w (new JFrame)
         model (make-model)
+        menubar (make-menubar model)
         canvas (make-canvas-component model)
         toolbar (make-toolbar-component model)]
     (.setTitle w "~Inkly~")
     (.setLayout w (new BorderLayout))
-    (.add w toolbar BorderLayout/NORTH)
+    (.setJMenuBar w menubar)
+    (.add w toolbar BorderLayout/SOUTH)
     (.add w canvas BorderLayout/CENTER)
     (.pack w)
     (.setBackground w Color/WHITE)
