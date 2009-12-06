@@ -223,10 +223,6 @@
                                                          stroke-sides))]
           (when (not (empty? stroke-sides))
             (let [[p0 p1] (first stroke-sides)]
-              (when (segments-intersect? [p0 p3] [p1 p2])
-                (println (.concat "Side bowtie: " (str [[p0 p3] [p1 p2]]))))
-              (when (segments-intersect? [p0 p1] [p2 p3])
-                (println (.concat "Longitudinal bowtie: " (str [[p0 p1] [p2 p3]]))))
               (draw-overlay-quad! model (builder :color) p0 p1 p2 p3)))
           builder))))
 
