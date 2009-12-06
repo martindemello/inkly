@@ -57,7 +57,7 @@
 
 (defstruct <model> :current-color
                    :pen-width
-                   :canvas-buffer
+                   :blobs
                    :overlay-buffer
                    :update-fns)
 
@@ -65,11 +65,10 @@
 (declare clear-overlay!)
 
 (defn make-model []
-  (let [canvas-buffer (make-buffer)
-        overlay-buffer (make-buffer)
+  (let [overlay-buffer (make-buffer)
         model (struct-map <model> :current-color (atom Color/BLACK)
                                   :pen-width (atom +default-pen-width+)
-                                  :canvas-buffer canvas-buffer
+                                  :blobs (atom [])
                                   :overlay-buffer overlay-buffer
                                   :update-fns (atom ()))]
     (clear-canvas! model)
@@ -81,25 +80,27 @@
 
 (defn render-model [model g]
   (.setComposite g AlphaComposite/Src)
-  (.drawImage g ((model :canvas-buffer) :image) 0 0 nil)
+  (.setRenderingHint g RenderingHints/KEY_ANTIALIASING
+                       RenderingHints/VALUE_ANTIALIAS_OFF)
+  (.setColor g Color/WHITE)
+  (.fillRect g 0 0 +canvas-width+ +canvas-height+)
+  (.setRenderingHint g RenderingHints/KEY_ANTIALIASING
+                       RenderingHints/VALUE_ANTIALIAS_ON)
   (.setComposite g AlphaComposite/SrcOver)
+  (let [render-blob (fn [[color area]]
+                      (.setColor g color)
+                      (.fill g area))]
+    (dorun (map render-blob @(model :blobs))))
   (.drawImage g ((model :overlay-buffer) :image) 0 0 nil))
 
 (defn clear-canvas! [model]
-  (let [g ((model :canvas-buffer) :g)]
-    (.setColor g Color/WHITE)
-    (.setComposite g AlphaComposite/Src)
-    (.setRenderingHint g RenderingHints/KEY_ANTIALIASING
-                         RenderingHints/VALUE_ANTIALIAS_OFF)
-    (.fillRect g 0 0 +canvas-width+ +canvas-height+)
-    (.setComposite g AlphaComposite/SrcOver)
-    (.setRenderingHint g RenderingHints/KEY_ANTIALIASING
-                         RenderingHints/VALUE_ANTIALIAS_ON)
-    (invoke-update-fns model +canvas-rect+)))
+  (reset! (model :blobs) [])
+  (invoke-update-fns model +canvas-rect+))
 
 (defn clear-overlay! [model]
   (let [g ((model :overlay-buffer) :g)]
     (.setComposite g AlphaComposite/Clear)
+    (.setColor g Color/WHITE)
     (.fillRect g 0 0 +canvas-width+ +canvas-height+)
     (.setComposite g AlphaComposite/SrcOver)
     (invoke-update-fns model +canvas-rect+)))
@@ -119,17 +120,32 @@
   (let [g ((model :overlay-buffer) :g)
         bounds (.getBounds shape)]
     (.setColor g color)
-    ; shift non-antialiased shape to match antialiased one
-    (.translate g -0.5 -0.5)
+    ; compensate for antialiasing weirdness
+    (when (not= color Color/WHITE)
+      (.translate g -0.5 -0.5))
     (.fill g shape)
-    (.translate g 0.5 0.5)
+    (when (not= color Color/WHITE)
+      (.translate g 0.5 0.5))
+    (.grow bounds 1 1)
     (invoke-update-fns model bounds)))
 
 (defn draw-canvas-shape! [model color shape]
-  (let [g ((model :canvas-buffer) :g)
-        bounds (.getBounds shape)]
-    (.setColor g color)
-    (.fill g shape)
+  (let [bounds (.getBounds shape)]
+    (swap! (model :blobs) conj [color shape])
+    (invoke-update-fns model bounds)))
+
+(defn erase-canvas-shape! [model shape]
+  (let [bounds (.getBounds shape)
+        erase-in-one (fn [[color shape2]]
+                       (let [shape2 (doto (.clone shape2)
+                                      (.subtract shape))]
+                         [color shape2]))
+        erase-in (fn [blobs]
+                   (apply vector
+                     (for [b (map erase-in-one blobs)
+                           :when (not (.isEmpty (second b)))] b)))]
+    (swap! (model :blobs) erase-in)
+    (.grow bounds 1 1)
     (invoke-update-fns model bounds)))
 
 (defn vadd [[x0 y0] [x1 y1]]
@@ -226,8 +242,11 @@
     (when (not (empty? stroke-sides))
       (clear-overlay! model)
       (let [points (concat (map first stroke-sides)
-                           (map second (reverse stroke-sides)))]
-        (draw-canvas-shape! model (builder :color) area)))))
+                           (map second (reverse stroke-sides)))
+            color (builder :color)]
+        (if (= color Color/WHITE)
+          (erase-canvas-shape! model area)
+          (draw-canvas-shape! model color area))))))
 
 (defn with-just-xy [f]
   (fn [behavior event] (f behavior (.getX event) (.getY event))))
