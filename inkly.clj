@@ -128,7 +128,8 @@
     path))
 
 (defn draw-overlay-quad! [model color p0 p1 p2 p3]
-  (let [poly (make-polygon [p0 p1 p2 p3])
+  (let [offset-vertex (fn [[x y]] [(- x 0.5) (- y 0.5)])
+        poly (make-polygon (map offset-vertex [p0 p1 p2 p3]))
         g ((model :overlay-buffer) :g)
         bounds (.getBounds poly)]
     (.setColor g color)
