@@ -21,11 +21,12 @@
 ; OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 ; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 (ns inkly 
-  (:import [javax.swing SwingUtilities JFrame JPanel WindowConstants]
+  (:import [javax.swing SwingUtilities JFrame JPanel WindowConstants
+                        JToolBar JToggleButton ButtonGroup]
            [java.awt Dimension Color Rectangle AlphaComposite
-                     RenderingHints]
+                     RenderingHints BorderLayout]
            [java.awt.geom Path2D Path2D$Float]
-           [java.awt.event MouseEvent KeyEvent]
+           [java.awt.event MouseEvent KeyEvent ActionListener]
            [java.awt.image BufferedImage]
            java.lang.Math)
   (:use [org.inkscape.inkly.input :only [make-input-behavior
@@ -58,7 +59,8 @@
 (defn make-model []
   (let [canvas-buffer (make-buffer)
         overlay-buffer (make-buffer)
-        model (struct-map <model> :canvas-buffer canvas-buffer
+        model (struct-map <model> :current-color (atom Color/BLACK)
+                                  :canvas-buffer canvas-buffer
                                   :overlay-buffer overlay-buffer
                                   :update-fns (atom ()))]
     (clear-canvas! model)
@@ -93,6 +95,10 @@
     (.setComposite g AlphaComposite/SrcOver)
     (invoke-update-fns model +canvas-rect+)))
 
+(defn set-current-color! [model color]
+  (reset! (model :current-color) color)
+  nil)
+
 (defn add-update-fn! [model callback]
   (swap! (model :update-fns) conj callback))
 
@@ -108,19 +114,19 @@
       (.closePath path))
     path))
 
-(defn draw-overlay-quad! [model p0 p1 p2 p3]
+(defn draw-overlay-quad! [model color p0 p1 p2 p3]
   (let [poly (make-polygon [p0 p1 p2 p3])
         g ((model :overlay-buffer) :g)
         bounds (.getBounds poly)]
-    (.setColor g Color/BLACK)
+    (.setColor g color)
     (.fill g poly)
     (invoke-update-fns model bounds)))
 
-(defn draw-canvas-polygon! [model points]
+(defn draw-canvas-polygon! [model color points]
   (let [poly (make-polygon points)
         g ((model :canvas-buffer) :g)
         bounds (.getBounds poly)]
-    (.setColor g Color/BLACK)
+    (.setColor g color)
     (.fill g poly)
     (invoke-update-fns model bounds)))
 
@@ -171,10 +177,11 @@
         stroke-offset (vscale +half-pen-width+ stroke-angle)]
     [(vsub pos stroke-offset) (vadd pos stroke-offset)]))
 
-(defstruct <stroke-builder> :previous-pos :previous-vel :stroke-sides)
+(defstruct <stroke-builder> :color :previous-pos :previous-vel :stroke-sides)
 
-(defn make-stroke-builder [x y]
-  (struct-map <stroke-builder> :previous-pos [x y]
+(defn make-stroke-builder [color x y]
+  (struct-map <stroke-builder> :color color
+                               :previous-pos [x y]
                                :previous-vel [(double 0.0) (double 0.0)]
                                :stroke-sides []))
 
@@ -189,18 +196,18 @@
         (let [old-vel (builder :previous-vel)
               [p2 p3] (stroke-points old-pos old-vel vel)
               stroke-sides (builder :stroke-sides)
-              builder (struct-map <stroke-builder>
-                                  :previous-pos pos
-                                  :previous-vel vel
-                                  ; note order: [p3 p2] become [p0 p1]
-                                  :stroke-sides (cons [p3 p2] stroke-sides))]
+              builder (assoc builder :previous-pos pos
+                                     :previous-vel vel
+                                     ; note order: [p3 p2] become [p0 p1]
+                                     :stroke-sides (cons [p3 p2]
+                                                         stroke-sides))]
           (when (not (empty? stroke-sides))
             (let [[p0 p1] (first stroke-sides)]
               (when (segments-intersect? [p0 p3] [p1 p2])
                 (println (.concat "Side bowtie: " (str [[p0 p3] [p1 p2]]))))
               (when (segments-intersect? [p0 p1] [p2 p3])
                 (println (.concat "Longitudinal bowtie: " (str [[p0 p1] [p2 p3]]))))
-              (draw-overlay-quad! model p0 p1 p2 p3)))
+              (draw-overlay-quad! model (builder :color) p0 p1 p2 p3)))
           builder))))
 
 (defn complete-stroke! [model builder]
@@ -212,7 +219,7 @@
       (clear-overlay! model)
       (let [points (concat (map first stroke-sides)
                            (map second (reverse stroke-sides)))]
-        (draw-canvas-polygon! model points)))))
+        (draw-canvas-polygon! model (builder :color) points)))))
 
 (defn with-just-xy [f]
   (fn [behavior event] (f behavior (.getX event) (.getY event))))
@@ -230,7 +237,7 @@
           (guard-button MouseEvent/BUTTON1 (with-just-xy
             (fn [behavior x y]
               (let [[previous-x previous-y] (get behavior :previous-pos [x y])
-                    builder (make-stroke-builder x y)
+                    builder (make-stroke-builder @(model :current-color) x y)
                     builder (add-stroke-sample! model builder x y)]
                 (make-draw-stroke-active-behavior model builder)))))
 
@@ -289,12 +296,37 @@
     (.setFocusable p true)
     p))
 
+(defn make-toolbar-color-button [model group color]
+  (let [button (new JToggleButton (str color))
+        listener (proxy [ActionListener] []
+                   (actionPerformed [e]
+                     (set-current-color! model color)))]
+    (.add group button)
+    (.addActionListener (.getModel button) listener)
+    button))
+
+(defn make-toolbar-component [model]
+  (let [toolbar (new JToolBar)
+        color-button-group (new ButtonGroup)
+        make-color-button #(make-toolbar-color-button model color-button-group %)
+        white-button (make-color-button Color/WHITE)
+        black-button (make-color-button Color/BLACK)]
+    (.setFloatable toolbar false)
+    (.setRollover toolbar true)
+    (.add toolbar black-button)
+    (.add toolbar white-button)
+    (.setSelected (.getModel black-button) true)
+    toolbar))
+
 (defn make-toplevel-window []
   (let [w (new JFrame)
         model (make-model)
-        v (make-canvas-component model)]
+        canvas (make-canvas-component model)
+        toolbar (make-toolbar-component model)]
     (.setTitle w "~Inkly~")
-    (.add w v)
+    (.setLayout w (new BorderLayout))
+    (.add w toolbar BorderLayout/NORTH)
+    (.add w canvas BorderLayout/CENTER)
     (.pack w)
     (.setBackground w Color/WHITE)
     (.setDefaultCloseOperation w WindowConstants/DISPOSE_ON_CLOSE)
