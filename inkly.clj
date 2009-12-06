@@ -42,22 +42,24 @@
 (def +half-pen-width+ (/ +pen-width+ 2.0))
 (def +motion-epsilon+ (double 2.0))
 
-(defstruct <model> :canvas-image :overlay-image :canvas-g :overlay-g :update-fns)
+(defstruct <buffer> :image :g)
+
+(defn make-buffer []
+  (let [image (new BufferedImage +canvas-width+ +canvas-height+
+                   BufferedImage/TYPE_INT_ARGB_PRE)
+        g (.createGraphics image)]
+    (struct-map <buffer> :image image :g g)))
+
+(defstruct <model> :canvas-buffer :overlay-buffer :update-fns)
 
 (declare clear-canvas!)
 (declare clear-overlay!)
 
 (defn make-model []
-  (let [make-image (fn [] (new BufferedImage +canvas-width+ +canvas-height+
-                               BufferedImage/TYPE_INT_ARGB_PRE))
-        canvas-image (make-image)
-        overlay-image (make-image)
-        canvas-g (.createGraphics canvas-image)
-        overlay-g (.createGraphics overlay-image)
-        model (struct-map <model> :canvas-image canvas-image
-                                  :canvas-g canvas-g
-                                  :overlay-image overlay-image
-                                  :overlay-g overlay-g
+  (let [canvas-buffer (make-buffer)
+        overlay-buffer (make-buffer)
+        model (struct-map <model> :canvas-buffer canvas-buffer
+                                  :overlay-buffer overlay-buffer
                                   :update-fns (atom ()))]
     (clear-canvas! model)
     (clear-overlay! model)
@@ -68,12 +70,12 @@
 
 (defn render-model [model g]
   (.setComposite g AlphaComposite/Src)
-  (.drawImage g (model :canvas-image) 0 0 nil)
+  (.drawImage g ((model :canvas-buffer) :image) 0 0 nil)
   (.setComposite g AlphaComposite/SrcOver)
-  (.drawImage g (model :overlay-image) 0 0 nil))
+  (.drawImage g ((model :overlay-buffer) :image) 0 0 nil))
 
 (defn clear-canvas! [model]
-  (let [g (model :canvas-g)]
+  (let [g ((model :canvas-buffer) :g)]
     (.setColor g Color/WHITE)
     (.setComposite g AlphaComposite/Src)
     (.setRenderingHint g RenderingHints/KEY_ANTIALIASING
@@ -85,7 +87,7 @@
     (invoke-update-fns model +canvas-rect+)))
 
 (defn clear-overlay! [model]
-  (let [g (model :overlay-g)]
+  (let [g ((model :overlay-buffer) :g)]
     (.setComposite g AlphaComposite/Clear)
     (.fillRect g 0 0 +canvas-width+ +canvas-height+)
     (.setComposite g AlphaComposite/SrcOver)
@@ -108,7 +110,7 @@
 
 (defn draw-overlay-quad! [model p0 p1 p2 p3]
   (let [poly (make-polygon [p0 p1 p2 p3])
-        g (model :overlay-g)
+        g ((model :overlay-buffer) :g)
         bounds (.getBounds poly)]
     (.setColor g Color/BLACK)
     (.fill g poly)
@@ -116,7 +118,7 @@
 
 (defn draw-canvas-polygon! [model points]
   (let [poly (make-polygon points)
-        g (model :canvas-g)
+        g ((model :canvas-buffer) :g)
         bounds (.getBounds poly)]
     (.setColor g Color/BLACK)
     (.fill g poly)
