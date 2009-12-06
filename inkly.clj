@@ -22,7 +22,7 @@
 ; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 (ns inkly 
   (:import [javax.swing SwingUtilities JFrame JPanel WindowConstants
-                        JToolBar JToggleButton ButtonGroup Icon]
+                        JToolBar JToggleButton ButtonGroup Icon JButton]
            [java.awt Dimension Color Rectangle AlphaComposite
                      RenderingHints BorderLayout Insets]
            [java.awt.geom Path2D Path2D$Float]
@@ -316,17 +316,29 @@
     (.addActionListener (.getModel button) listener)
     button))
 
+(defn make-toolbar-clear-button [model]
+  (let [button (new JButton "clear")
+        listener (proxy [ActionListener] []
+                    (actionPerformed [e]
+                      (clear-canvas! model)))]
+    (.setMargin button (new Insets 1 1 1 1))
+    (.addActionListener button listener)
+    button))
+
 (defn make-toolbar-component [model]
   (let [toolbar (new JToolBar)
         color-button-group (new ButtonGroup)
         make-color-button #(make-toolbar-color-button model color-button-group %)
         white-button (make-color-button Color/WHITE)
-        black-button (make-color-button Color/BLACK)]
+        black-button (make-color-button Color/BLACK)
+        clear-all-button (make-toolbar-clear-button model)]
     (.setFloatable toolbar false)
     (.setRollover toolbar true)
     (.add toolbar black-button)
     (.add toolbar white-button)
     (.setSelected (.getModel black-button) true)
+    (.addSeparator toolbar)
+    (.add toolbar clear-all-button)
     toolbar))
 
 (defn make-toplevel-window []
