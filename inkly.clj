@@ -22,7 +22,9 @@
 ; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 (ns inkly 
   (:import [javax.swing SwingUtilities JFrame JPanel WindowConstants
-                        JToolBar JToggleButton ButtonGroup Icon JButton]
+                        JToolBar JToggleButton ButtonGroup Icon JButton
+                        JSlider]
+           [javax.swing.event ChangeListener]
            [java.awt Dimension Color Rectangle AlphaComposite
                      RenderingHints BorderLayout Insets]
            [java.awt.geom Path2D Path2D$Float]
@@ -39,8 +41,9 @@
 (def +canvas-height+ 400)
 (def +canvas-dimensions+ (new Dimension +canvas-width+ +canvas-height+))
 (def +canvas-rect+ (new Rectangle +canvas-dimensions+))
-(def +pen-width+ (double 30))
-(def +half-pen-width+ (/ +pen-width+ 2.0))
+(def +default-pen-width+ (double 30))
+(def +min-pen-width+ (double 1))
+(def +max-pen-width+ (double 50))
 (def +motion-epsilon+ (double 2.0))
 (def +color-icon-size+ 16)
 
@@ -52,7 +55,11 @@
         g (.createGraphics image)]
     (struct-map <buffer> :image image :g g)))
 
-(defstruct <model> :canvas-buffer :overlay-buffer :update-fns)
+(defstruct <model> :current-color
+                   :pen-width
+                   :canvas-buffer
+                   :overlay-buffer
+                   :update-fns)
 
 (declare clear-canvas!)
 (declare clear-overlay!)
@@ -61,6 +68,7 @@
   (let [canvas-buffer (make-buffer)
         overlay-buffer (make-buffer)
         model (struct-map <model> :current-color (atom Color/BLACK)
+                                  :pen-width (atom +default-pen-width+)
                                   :canvas-buffer canvas-buffer
                                   :overlay-buffer overlay-buffer
                                   :update-fns (atom ()))]
@@ -98,6 +106,10 @@
 
 (defn set-current-color! [model color]
   (reset! (model :current-color) color)
+  nil)
+
+(defn set-pen-width! [model width]
+  (reset! (model :pen-width) width)
   nil)
 
 (defn add-update-fn! [model callback]
@@ -173,15 +185,20 @@
           (and (and (>= t0 0.0) (<= t0 1.0))
                (and (>= t1 0.0) (<= t1 1.0)))))))
 
-(defn stroke-points [pos vin vout]
+(defn stroke-points [pos width vin vout]
   (let [stroke-angle (rot90 (vnorm (vadd vin vout)))
-        stroke-offset (vscale +half-pen-width+ stroke-angle)]
+        stroke-offset (vscale (/ width 2.0) stroke-angle)]
     [(vsub pos stroke-offset) (vadd pos stroke-offset)]))
 
-(defstruct <stroke-builder> :color :previous-pos :previous-vel :stroke-sides)
+(defstruct <stroke-builder> :color
+                            :width
+                            :previous-pos
+                            :previous-vel
+                            :stroke-sides)
 
-(defn make-stroke-builder [color x y]
+(defn make-stroke-builder [color width x y]
   (struct-map <stroke-builder> :color color
+                               :width width
                                :previous-pos [x y]
                                :previous-vel [(double 0.0) (double 0.0)]
                                :stroke-sides []))
@@ -194,8 +211,9 @@
     (if (< mvel +motion-epsilon+)
         builder
         ; else
-        (let [old-vel (builder :previous-vel)
-              [p2 p3] (stroke-points old-pos old-vel vel)
+        (let [width (builder :width)
+              old-vel (builder :previous-vel)
+              [p2 p3] (stroke-points old-pos width old-vel vel)
               stroke-sides (builder :stroke-sides)
               builder (assoc builder :previous-pos pos
                                      :previous-vel vel
@@ -212,9 +230,10 @@
           builder))))
 
 (defn complete-stroke! [model builder]
-  (let [old-vel (builder :previous-vel)
+  (let [width (builder :width)
+        old-vel (builder :previous-vel)
         old-pos (builder :previous-pos)
-        [p2 p3] (stroke-points old-pos old-vel old-vel)
+        [p2 p3] (stroke-points old-pos width old-vel old-vel)
         stroke-sides (builder :stroke-sides)]
     (when (not (empty? stroke-sides))
       (clear-overlay! model)
@@ -238,7 +257,9 @@
           (guard-button MouseEvent/BUTTON1 (with-just-xy
             (fn [behavior x y]
               (let [[previous-x previous-y] (get behavior :previous-pos [x y])
-                    builder (make-stroke-builder @(model :current-color) x y)
+                    color @(model :current-color)
+                    width @(model :pen-width)
+                    builder (make-stroke-builder color width x y)
                     builder (add-stroke-sample! model builder x y)]
                 (make-draw-stroke-active-behavior model builder)))))
 
@@ -319,11 +340,26 @@
 (defn make-toolbar-clear-button [model]
   (let [button (new JButton "clear")
         listener (proxy [ActionListener] []
-                    (actionPerformed [e]
-                      (clear-canvas! model)))]
+                   (actionPerformed [e]
+                     (clear-canvas! model)))]
     (.setMargin button (new Insets 1 1 1 1))
     (.addActionListener button listener)
     button))
+
+(defn make-toolbar-width-slider [model]
+  (let [slider (new JSlider JSlider/HORIZONTAL
+                            +min-pen-width+
+                            +max-pen-width+
+                            +default-pen-width+)
+        range-model (.getModel slider)
+        listener (proxy [ChangeListener] []
+                   (stateChanged [e]
+                     (when (not (.getValueIsAdjusting range-model))
+                       (let [width (.getValue range-model)]
+                         (set-pen-width! model width)))))]
+    (.addChangeListener range-model listener)
+    (.setOpaque slider false)
+    slider))
 
 (defn make-toolbar-component [model]
   (let [toolbar (new JToolBar)
@@ -331,7 +367,8 @@
         make-color-button #(make-toolbar-color-button model color-button-group %)
         white-button (make-color-button Color/WHITE)
         black-button (make-color-button Color/BLACK)
-        clear-all-button (make-toolbar-clear-button model)]
+        clear-all-button (make-toolbar-clear-button model)
+        pen-width-slider (make-toolbar-width-slider model)]
     (.setFloatable toolbar false)
     (.setRollover toolbar true)
     (.add toolbar black-button)
@@ -339,6 +376,8 @@
     (.setSelected (.getModel black-button) true)
     (.addSeparator toolbar)
     (.add toolbar clear-all-button)
+    (.addSeparator toolbar)
+    (.add toolbar pen-width-slider)
     toolbar))
 
 (defn make-toplevel-window []
