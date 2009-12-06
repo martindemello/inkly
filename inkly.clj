@@ -26,8 +26,8 @@
                         JSlider]
            [javax.swing.event ChangeListener]
            [java.awt Dimension Color Rectangle AlphaComposite
-                     RenderingHints BorderLayout Insets]
-           [java.awt.geom Path2D Path2D$Float]
+                     RenderingHints BorderLayout Insets Polygon]
+           [java.awt.geom Area]
            [java.awt.event MouseEvent KeyEvent ActionListener]
            [java.awt.image BufferedImage]
            java.lang.Math)
@@ -115,34 +115,21 @@
 (defn add-update-fn! [model callback]
   (swap! (model :update-fns) conj callback))
 
-(defn make-polygon [points]
-  (let [path (new Path2D$Float)]
-    (.setWindingRule path Path2D/WIND_NON_ZERO)
-    (when (not (empty? points))
-      (let [[initial-point & remaining-points] points
-            move-to (fn [[x y]] (.moveTo path x y))
-            line-to (fn [[x y]] (.lineTo path x y))]
-        (move-to initial-point)
-        (dorun (map line-to remaining-points)))
-      (.closePath path))
-    path))
-
-(defn draw-overlay-quad! [model color p0 p1 p2 p3]
-  (let [poly (make-polygon [p0 p1 p2 p3])
-        g ((model :overlay-buffer) :g)
-        bounds (.getBounds poly)]
+(defn draw-overlay-shape! [model color shape]
+  (let [g ((model :overlay-buffer) :g)
+        bounds (.getBounds shape)]
     (.setColor g color)
+    ; shift non-antialiased shape to match antialiased one
     (.translate g -0.5 -0.5)
-    (.fill g poly)
+    (.fill g shape)
     (.translate g 0.5 0.5)
     (invoke-update-fns model bounds)))
 
-(defn draw-canvas-polygon! [model color points]
-  (let [poly (make-polygon points)
-        g ((model :canvas-buffer) :g)
-        bounds (.getBounds poly)]
+(defn draw-canvas-shape! [model color shape]
+  (let [g ((model :canvas-buffer) :g)
+        bounds (.getBounds shape)]
     (.setColor g color)
-    (.fill g poly)
+    (.fill g shape)
     (invoke-update-fns model bounds)))
 
 (defn vadd [[x0 y0] [x1 y1]]
@@ -205,7 +192,7 @@
                                :previous-vel [(double 0.0) (double 0.0)]
                                :stroke-sides []))
 
-(defn add-stroke-sample! [model builder x y]
+(defn add-stroke-sample! [model area builder x y]
   (let [pos [(double x) (double y)]
         old-pos (builder :previous-pos)
         vel (vsub pos old-pos)
@@ -223,11 +210,14 @@
                                      :stroke-sides (cons [p3 p2]
                                                          stroke-sides))]
           (when (not (empty? stroke-sides))
-            (let [[p0 p1] (first stroke-sides)]
-              (draw-overlay-quad! model (builder :color) p0 p1 p2 p3)))
+            (let [[p0 p1] (first stroke-sides)
+                  quad (new Polygon)]
+              (dorun (map (fn [[x y]] (.addPoint quad x y)) [p0 p1 p2 p3]))
+              (.add area (new Area quad))
+              (draw-overlay-shape! model (builder :color) quad)))
           builder))))
 
-(defn complete-stroke! [model builder]
+(defn complete-stroke! [model area builder]
   (let [width (builder :width)
         old-vel (builder :previous-vel)
         old-pos (builder :previous-pos)
@@ -237,7 +227,7 @@
       (clear-overlay! model)
       (let [points (concat (map first stroke-sides)
                            (map second (reverse stroke-sides)))]
-        (draw-canvas-polygon! model (builder :color) points)))))
+        (draw-canvas-shape! model (builder :color) area)))))
 
 (defn with-just-xy [f]
   (fn [behavior event] (f behavior (.getX event) (.getY event))))
@@ -257,9 +247,10 @@
               (let [[previous-x previous-y] (get behavior :previous-pos [x y])
                     color @(model :current-color)
                     width @(model :pen-width)
+                    area (new Area)
                     builder (make-stroke-builder color width x y)
-                    builder (add-stroke-sample! model builder x y)]
-                (make-draw-stroke-active-behavior model builder)))))
+                    builder (add-stroke-sample! model area builder x y)]
+                (make-draw-stroke-active-behavior model area builder)))))
 
         on-mouse-moved
           (with-just-xy
@@ -270,18 +261,18 @@
                          :on-mouse-dragged on-mouse-moved
                          :previous-pos previous-pos)))
 
-(defn make-draw-stroke-active-behavior [model builder]
+(defn make-draw-stroke-active-behavior [model area builder]
   (let [on-mouse-released
           (guard-button MouseEvent/BUTTON1 (with-just-xy
             (fn [behavior x y]
-              (let [builder (add-stroke-sample! model (behavior :builder) x y)]
-                (complete-stroke! model builder)
+              (let [builder (add-stroke-sample! model area (behavior :builder) x y)]
+                (complete-stroke! model area builder)
                 (make-draw-stroke-idle-behavior model [x y])))))
 
         on-mouse-dragged
           (with-just-xy
             (fn [behavior x y]
-              (let [builder (add-stroke-sample! model (behavior :builder) x y)]
+              (let [builder (add-stroke-sample! model area (behavior :builder) x y)]
                 (assoc behavior :builder builder))))]
 
     (make-input-behavior :on-mouse-released on-mouse-released
