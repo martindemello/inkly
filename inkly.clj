@@ -230,7 +230,9 @@
                   quad (new Polygon)]
               (dorun (map (fn [[x y]] (.addPoint quad x y)) [p0 p1 p2 p3]))
               (.add area (new Area quad))
-              (draw-overlay-shape! model (builder :color) quad)))
+              (let [color (builder :color)
+                    color (if (= color :erase) Color/WHITE color)]
+                (draw-overlay-shape! model color quad))))
           builder))))
 
 (defn complete-stroke! [model area builder]
@@ -244,7 +246,7 @@
       (let [points (concat (map first stroke-sides)
                            (map second (reverse stroke-sides)))
             color (builder :color)]
-        (if (= color Color/WHITE)
+        (if (= color :erase)
           (erase-canvas-shape! model area)
           (draw-canvas-shape! model color area))))))
 
@@ -331,8 +333,16 @@
     (getIconHeight [] +color-icon-size+)
     (getIconWidth [] +color-icon-size+)
     (paintIcon [c g x y]
-      (.setColor g color)
-      (.fillRect g x y +color-icon-size+ +color-icon-size+))))
+      (if (= color :erase)
+        (do (.setColor g Color/WHITE)
+            (.fillRect g x y +color-icon-size+ +color-icon-size+)
+            (.setColor g Color/RED)
+            (let [opp-x (- (+ x +color-icon-size+) 1)
+                  opp-y (- (+ y +color-icon-size+) 1)]
+              (.drawLine g x y opp-x opp-y)
+              (.drawLine g x opp-y opp-x y)))
+        (do (.setColor g color)
+            (.fillRect g x y +color-icon-size+ +color-icon-size+))))))
 
 (defn make-toolbar-color-button [model group color]
   (let [button (new JToggleButton)
@@ -373,14 +383,14 @@
   (let [toolbar (new JToolBar)
         color-button-group (new ButtonGroup)
         make-color-button #(make-toolbar-color-button model color-button-group %)
-        white-button (make-color-button Color/WHITE)
+        erase-button (make-color-button :erase) 
         black-button (make-color-button Color/BLACK)
         clear-all-button (make-toolbar-clear-button model)
         pen-width-slider (make-toolbar-width-slider model)]
     (.setFloatable toolbar false)
     (.setRollover toolbar true)
     (.add toolbar black-button)
-    (.add toolbar white-button)
+    (.add toolbar erase-button)
     (.setSelected (.getModel black-button) true)
     (.addSeparator toolbar)
     (.add toolbar clear-all-button)
