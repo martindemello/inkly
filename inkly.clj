@@ -22,9 +22,9 @@
 ; WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 (ns inkly 
   (:import [javax.swing SwingUtilities JFrame JPanel WindowConstants
-                        JToolBar JToggleButton ButtonGroup]
+                        JToolBar JToggleButton ButtonGroup Icon]
            [java.awt Dimension Color Rectangle AlphaComposite
-                     RenderingHints BorderLayout]
+                     RenderingHints BorderLayout Insets]
            [java.awt.geom Path2D Path2D$Float]
            [java.awt.event MouseEvent KeyEvent ActionListener]
            [java.awt.image BufferedImage]
@@ -42,6 +42,7 @@
 (def +pen-width+ (double 30))
 (def +half-pen-width+ (/ +pen-width+ 2.0))
 (def +motion-epsilon+ (double 2.0))
+(def +color-icon-size+ 16)
 
 (defstruct <buffer> :image :g)
 
@@ -296,12 +297,22 @@
     (.setFocusable p true)
     p))
 
+(defn make-color-icon [color]
+  (proxy [Icon] []
+    (getIconHeight [] +color-icon-size+)
+    (getIconWidth [] +color-icon-size+)
+    (paintIcon [c g x y]
+      (.setColor g color)
+      (.fillRect g x y +color-icon-size+ +color-icon-size+))))
+
 (defn make-toolbar-color-button [model group color]
-  (let [button (new JToggleButton (str color))
+  (let [button (new JToggleButton)
         listener (proxy [ActionListener] []
                    (actionPerformed [e]
                      (set-current-color! model color)))]
     (.add group button)
+    (.setMargin button (new Insets 0 0 0 0))
+    (.setIcon button (make-color-icon color))
     (.addActionListener (.getModel button) listener)
     button))
 
